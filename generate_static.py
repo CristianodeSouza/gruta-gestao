@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 import os
-import json
 import gspread
 from datetime import datetime
+import json
 
-# Configuração das planilhas
 SPREADSHEET_IDS = {
     "95594065000119": "1ZNxygVnszQ4X-28b5OLckMjlMZ1C519ahLTP-DDU8AU",
     "65313187/0001-29": "1W159OU4uYApYA1i9YJjEnnVKfACwckDN6kOt29qwOCI"
@@ -16,524 +15,764 @@ CNPJ_NAMES = {
 }
 
 def get_credentials():
-    """Obtém credenciais do Google"""
     try:
-        credentials_path = os.path.expanduser("~") + r"\Downloads\gruta-gestao-6b88ee2d9c7b.json"
+        credentials_path = r"C:\Users\User\Downloads\gruta-gestao-6b88ee2d9c7b.json"
         if not os.path.exists(credentials_path):
-            credentials_path = r"C:\Users\User\Downloads\gruta-gestao-6b88ee2d9c7b.json"
-
-        if not os.path.exists(credentials_path):
-            print(f"[ERRO] Arquivo de credenciais não encontrado em {credentials_path}")
             return None
-
         gc = gspread.service_account(filename=credentials_path)
-        print(f"[OK] Credenciais carregadas")
         return gc
-    except Exception as e:
-        print(f"[ERRO] Falha ao carregar credenciais: {str(e)}")
+    except:
         return None
 
-def read_sheet_data(gc, spreadsheet_id, sheet_name):
-    """Lê dados de uma aba específica"""
+def format_currency(value):
+    """Formata valor como moeda brasileira: R$ 1.234,56"""
+    if not value or value == '' or value == 0:
+        return "R$ 0,00"
+    try:
+        float_val = float(str(value).replace(",", "."))
+        # Formatar com 2 casas decimais
+        formatted = f"{float_val:,.2f}"
+        # Trocar . por @ temporariamente para evitar conflito
+        formatted = formatted.replace(",", "@").replace(".", ",").replace("@", ".")
+        return f"R$ {formatted}"
+    except:
+        return "R$ 0,00"
+
+def read_livro_diario(gc, spreadsheet_id):
     try:
         spreadsheet = gc.open_by_key(spreadsheet_id)
-        worksheet = spreadsheet.worksheet(sheet_name)
+        worksheet = spreadsheet.worksheet("Livro Diário FC")
         data = worksheet.get_all_values()
-        return data
+
+        header_row = None
+        for i, row in enumerate(data):
+            if len(row) > 2 and 'Data' in row:
+                header_row = i
+                break
+
+        if header_row is None:
+            return []
+
+        data_col = 2
+        entrada_col = 8
+        saida_col = 9
+        descricao_col = 5
+
+        transactions = []
+        for row in data[header_row + 1:]:
+            if not any(row):
+                continue
+            try:
+                data_str = row[data_col] if len(row) > data_col else ""
+                entrada = float(str(row[entrada_col]).replace(",", ".")) if len(row) > entrada_col and row[entrada_col] else 0
+                saida = float(str(row[saida_col]).replace(",", ".")) if len(row) > saida_col and row[saida_col] else 0
+                descricao = row[descricao_col] if len(row) > descricao_col else ""
+                valor = entrada - saida
+
+                if valor != 0 or descricao.strip():
+                    transactions.append({
+                        "data": data_str,
+                        "entrada": entrada,
+                        "saida": saida,
+                        "valor": valor,
+                        "descricao": descricao
+                    })
+            except:
+                continue
+
+        return transactions
     except Exception as e:
-        print(f"[ERRO] Lendo aba '{sheet_name}': {str(e)}")
         return []
-
-def format_value(value):
-    """Formata valor para exibição"""
-    if not value:
-        return ""
-    try:
-        # Tenta converter para float se for número
-        float_val = float(value)
-        if float_val == int(float_val):
-            return f"R$ {int(float_val):,.0f}".replace(",", ".")
-        else:
-            return f"R$ {float_val:,.2f}".replace(",", ".")
-    except:
-        return str(value)
-
-def process_livro_diario(data):
-    """Processa Livro Diário - retorna últimas 50 transações"""
-    if len(data) <= 2:
-        return []
-
-    # Encontrar linha de cabeçalho
-    header_row = 0
-    for i, row in enumerate(data[:10]):
-        if any(cell and 'Data' in str(cell) for cell in row):
-            header_row = i
-            break
-
-    transactions = []
-    for row in data[header_row + 1:]:
-        if not any(row):
-            continue
-        try:
-            trans = {
-                "data": row[0] if len(row) > 0 else "",
-                "descricao": row[1] if len(row) > 1 else "",
-                "categoria": row[2] if len(row) > 2 else "",
-                "valor": row[3] if len(row) > 3 else "0",
-            }
-            if trans["valor"] or trans["descricao"]:
-                transactions.append(trans)
-        except:
-            continue
-
-    return transactions[-50:]  # Últimas 50 transações
 
 def get_cnpj_data(gc, cnpj):
-    """Obtém todos os dados de um CNPJ"""
-    spreadsheet_id = SPREADSHEET_IDS[cnpj]
-
     try:
-        print(f"  Lendo dados do CNPJ {cnpj}...")
+        spreadsheet_id = SPREADSHEET_IDS[cnpj]
+        transactions = read_livro_diario(gc, spreadsheet_id)
 
-        # Ler abas principais
-        livro_diario = read_sheet_data(gc, spreadsheet_id, "Livro Diário FC")
-        fluxo_caixa = read_sheet_data(gc, spreadsheet_id, "FC")
-        analise_fin = read_sheet_data(gc, spreadsheet_id, "Análise Fin")
-        planejamento = read_sheet_data(gc, spreadsheet_id, "Planejamento Financeiro")
-        apagar_receber = read_sheet_data(gc, spreadsheet_id, "A Pagar e A Receber ")
+        total_entrada = sum(t["entrada"] for t in transactions)
+        total_saida = sum(t["saida"] for t in transactions)
+        saldo = total_entrada - total_saida
+
+        dias_dados = {}
+        for t in transactions:
+            data = t["data"][:10] if len(t["data"]) >= 10 else t["data"]
+            if data not in dias_dados:
+                dias_dados[data] = {"entrada": 0, "saida": 0}
+            dias_dados[data]["entrada"] += t["entrada"]
+            dias_dados[data]["saida"] += t["saida"]
 
         return {
-            "livro_diario": process_livro_diario(livro_diario),
-            "fluxo_caixa": fluxo_caixa[:10] if fluxo_caixa else [],
-            "analise_fin": analise_fin[:15] if analise_fin else [],
-            "planejamento": planejamento[:20] if planejamento else [],
-            "apagar_receber": apagar_receber[:25] if apagar_receber else [],
+            "transactions": sorted(transactions, key=lambda x: x["data"], reverse=True),
+            "summary": {
+                "total_entrada": total_entrada,
+                "total_saida": total_saida,
+                "saldo": saldo,
+                "total_transacoes": len(transactions),
+                "ticket_medio": saldo / len(transactions) if transactions else 0,
+                "margem": (saldo / total_entrada * 100) if total_entrada > 0 else 0,
+            },
+            "daily_data": dias_dados
         }
-    except Exception as e:
-        print(f"[ERRO] Obtendo dados de {cnpj}: {str(e)}")
+    except:
         return None
 
 def generate_html(all_data):
-    """Gera HTML estático com todos os dados"""
+    """Gera dashboard gerencial profissional e responsiva"""
 
-    html_content = '''<!DOCTYPE html>
+    html = '''<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GRUTA GESTAO - Gestão Financeira Completa</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GRUTA GESTAO - Dashboard Gerencial</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow-x: hidden;
+        }
+
+        :root {
+            --primary: #1f2937;
+            --accent: #3b82f6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --light: #f9fafb;
+            --border: #e5e7eb;
+            --text: #111827;
+            --text-light: #6b7280;
+        }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f5f5f5;
-            color: #333;
+            background: var(--light);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
         }
 
-        .header {
-            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+        header {
+            background: var(--primary);
             color: white;
-            padding: 2rem;
-            text-align: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            padding: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            flex-shrink: 0;
         }
 
-        .header h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
-        .header p { font-size: 1rem; opacity: 0.9; }
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .header-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        select {
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 1rem;
+            background: white;
+            cursor: pointer;
+            min-width: 280px;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        main {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            -webkit-overflow-scrolling: touch;
+        }
 
         .container {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 2rem;
         }
 
-        .selector {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 8px;
-            margin-bottom: 2rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            display: flex;
-            gap: 1rem;
-            align-items: center;
-        }
-
-        .selector label {
-            font-weight: 600;
-            margin-right: 1rem;
-        }
-
-        .selector select {
-            padding: 0.8rem 1rem;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 1rem;
-            cursor: pointer;
-            flex: 1;
-            max-width: 400px;
-        }
-
-        .info-box {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 8px;
-            margin-bottom: 2rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-
-        .info-box h2 {
-            color: #2196F3;
-            margin-bottom: 1rem;
-            font-size: 1.3rem;
-            border-bottom: 2px solid #2196F3;
-            padding-bottom: 0.5rem;
-        }
-
-        .cards {
+        .kpi-section {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
             gap: 1rem;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
 
-        .card {
-            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
-            color: white;
-            padding: 1.5rem;
+        .kpi {
+            background: white;
             border-radius: 8px;
-            text-align: center;
+            padding: 1.25rem 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-left: 4px solid var(--accent);
         }
 
-        .card h3 {
-            font-size: 0.9rem;
-            opacity: 0.9;
+        .kpi.success { border-left-color: var(--success); }
+        .kpi.danger { border-left-color: var(--danger); }
+
+        .kpi-icon {
+            font-size: 1.75rem;
             margin-bottom: 0.5rem;
         }
 
-        .card .value {
-            font-size: 1.8rem;
-            font-weight: bold;
+        .kpi-label {
+            font-size: 0.75rem;
+            color: var(--text-light);
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.3px;
         }
 
-        .table {
+        .kpi-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.1;
+            word-break: break-word;
+        }
+
+        .kpi-change {
+            font-size: 0.75rem;
+            color: var(--text-light);
+            margin-top: 0.25rem;
+        }
+
+        .kpi-change.positive { color: var(--success); }
+        .kpi-change.negative { color: var(--danger); }
+
+        .charts-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .chart-card {
+            background: white;
+            border-radius: 8px;
+            padding: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .chart-title {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            color: var(--text);
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 0.5rem;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 250px;
+            width: 100%;
+        }
+
+        .table-section {
+            background: white;
+            border-radius: 8px;
+            padding: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+
+        .table-title {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            color: var(--text);
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 0.5rem;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        table {
             width: 100%;
             border-collapse: collapse;
-            background: white;
-            margin-bottom: 2rem;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            font-size: 0.9rem;
         }
 
-        .table thead {
-            background: #f5f5f5;
-            border-bottom: 2px solid #ddd;
-        }
-
-        .table th {
-            padding: 1rem;
+        th {
+            background: var(--light);
+            padding: 0.75rem 0.5rem;
             text-align: left;
             font-weight: 600;
-            color: #333;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            border-bottom: 2px solid var(--border);
         }
 
-        .table td {
-            padding: 0.8rem 1rem;
-            border-bottom: 1px solid #eee;
+        td {
+            padding: 0.75rem 0.5rem;
+            border-bottom: 1px solid var(--border);
         }
 
-        .table tbody tr:hover {
-            background: #f9f9f9;
+        tbody tr:hover {
+            background: var(--light);
         }
 
-        .table tbody tr:last-child td {
-            border-bottom: none;
+        .value-positive {
+            color: var(--success);
+            font-weight: 600;
         }
 
-        .timestamp {
+        .value-negative {
+            color: var(--danger);
+            font-weight: 600;
+        }
+
+        footer {
+            background: white;
+            border-top: 1px solid var(--border);
+            padding: 1rem;
             text-align: center;
-            color: #999;
-            font-size: 0.9rem;
-            margin-top: 2rem;
-            padding-top: 2rem;
-            border-top: 1px solid #eee;
+            color: var(--text-light);
+            font-size: 0.8rem;
+            flex-shrink: 0;
         }
 
-        .footer {
-            background: #212121;
-            color: white;
-            padding: 2rem;
-            text-align: center;
-            margin-top: 2rem;
-        }
+        .hidden { display: none; }
 
-        .hidden {
-            display: none;
-        }
-
+        /* RESPONSIVO MOBILE */
         @media (max-width: 768px) {
-            .header h1 { font-size: 1.8rem; }
-            .container { padding: 1rem; }
-            .selector { flex-direction: column; align-items: stretch; }
-            .selector select { max-width: 100%; }
-            .table th, .table td { padding: 0.6rem; font-size: 0.9rem; }
-            .cards { grid-template-columns: 1fr; }
+            header {
+                padding: 0.75rem;
+            }
+
+            .header-content {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .header-title {
+                font-size: 1.1rem;
+                text-align: center;
+            }
+
+            select {
+                min-width: 100%;
+                width: 100%;
+            }
+
+            main {
+                padding: 0.75rem;
+            }
+
+            .kpi-section {
+                grid-template-columns: 1fr 1fr;
+                gap: 0.75rem;
+                margin-bottom: 1rem;
+            }
+
+            .kpi {
+                padding: 1rem 0.75rem;
+            }
+
+            .kpi-icon {
+                font-size: 1.5rem;
+                margin-bottom: 0.25rem;
+            }
+
+            .kpi-label {
+                font-size: 0.7rem;
+            }
+
+            .kpi-value {
+                font-size: 1.25rem;
+            }
+
+            .charts-section {
+                grid-template-columns: 1fr;
+                gap: 0.75rem;
+                margin-bottom: 1rem;
+            }
+
+            .chart-card {
+                padding: 0.75rem;
+            }
+
+            .chart-title {
+                font-size: 0.95rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .chart-container {
+                height: 200px;
+            }
+
+            .table-section {
+                padding: 0.75rem;
+                margin-bottom: 1rem;
+            }
+
+            .table-title {
+                font-size: 0.95rem;
+            }
+
+            table {
+                font-size: 0.8rem;
+            }
+
+            th, td {
+                padding: 0.5rem 0.4rem;
+                font-size: 0.75rem;
+            }
+
+            /* Stack coluna de valores */
+            thead {
+                display: none;
+            }
+
+            tbody tr {
+                display: block;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                margin-bottom: 0.75rem;
+                padding: 0.75rem;
+                background: white;
+            }
+
+            td {
+                display: block;
+                border: none;
+                padding: 0.5rem 0;
+                text-align: left;
+                border-bottom: 1px solid var(--border);
+            }
+
+            td:last-child {
+                border-bottom: none;
+                margin-bottom: 0;
+            }
+
+            td:before {
+                content: attr(data-label);
+                font-weight: 600;
+                display: inline-block;
+                width: 100px;
+                color: var(--text-light);
+                font-size: 0.75rem;
+                text-transform: uppercase;
+                margin-right: 0.5rem;
+            }
+
+            footer {
+                padding: 0.75rem;
+                font-size: 0.75rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .kpi-section {
+                grid-template-columns: 1fr;
+            }
+
+            .header-title {
+                font-size: 1rem;
+            }
+
+            .kpi-value {
+                font-size: 1.1rem;
+            }
+
+            .chart-container {
+                height: 180px;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>GRUTA GESTÃO</h1>
-        <p>Sistema de Gestão Financeira - Dados Atualizados</p>
-    </div>
-
-    <div class="container">
-        <div class="selector">
-            <label for="cnpj-select">Selecione a Empresa:</label>
+    <header>
+        <div class="header-content">
+            <div class="header-title">GRUTA GESTAO Dashboard</div>
             <select id="cnpj-select" onchange="changeCNPJ()">
 '''
 
-    # Adicionar opções de CNPJ
     for cnpj in SPREADSHEET_IDS.keys():
-        html_content += f'                <option value="{cnpj}">{cnpj} - {CNPJ_NAMES[cnpj]}</option>\n'
+        html += f'                <option value="{cnpj}">{cnpj}</option>\n'
 
-    html_content += '''            </select>
+    html += '''            </select>
         </div>
+    </header>
+
+    <main>
+        <div class="container">
 '''
 
-    # Gerar seções para cada CNPJ
+    # Gerar dados para gráficos
+    chart_data = {}
+
     for cnpj, data in all_data.items():
         if not data:
             continue
 
-        html_content += f'''
-        <div id="cnpj-{cnpj}" class="cnpj-section">
-            <!-- LIVRO DIÁRIO -->
-            <div class="info-box">
-                <h2>📊 Livro Diário - Transações Recentes</h2>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Data</th>
-                            <th>Descrição</th>
-                            <th>Categoria</th>
-                            <th>Valor</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+        summary = data["summary"]
+        saldo_type = "positive" if summary["saldo"] >= 0 else "negative"
+
+        # Preparar dados para gráficos
+        days = sorted(data["daily_data"].keys())[-30:]  # Últimos 30 dias
+        daily_entrada = [data["daily_data"][d]["entrada"] for d in days]
+        daily_saida = [data["daily_data"][d]["saida"] for d in days]
+
+        chart_data[cnpj] = {
+            "days": days,
+            "entrada": daily_entrada,
+            "saida": daily_saida,
+            "total_entrada": summary["total_entrada"],
+            "total_saida": summary["total_saida"]
+        }
+
+        html += f'''
+            <div id="cnpj-{cnpj}" class="cnpj-section">
+                <div class="kpi-section">
+                    <div class="kpi success">
+                        <div class="kpi-icon">📈</div>
+                        <div class="kpi-label">Receita</div>
+                        <div class="kpi-value">{format_currency(summary["total_entrada"])}</div>
+                    </div>
+
+                    <div class="kpi danger">
+                        <div class="kpi-icon">📉</div>
+                        <div class="kpi-label">Despesa</div>
+                        <div class="kpi-value">{format_currency(summary["total_saida"])}</div>
+                    </div>
+
+                    <div class="kpi {saldo_type}">
+                        <div class="kpi-icon">💰</div>
+                        <div class="kpi-label">Saldo</div>
+                        <div class="kpi-value">{format_currency(summary["saldo"])}</div>
+                    </div>
+
+                    <div class="kpi">
+                        <div class="kpi-icon">📊</div>
+                        <div class="kpi-label">Margem</div>
+                        <div class="kpi-value">{summary["margem"]:.1f}%</div>
+                    </div>
+
+                    <div class="kpi">
+                        <div class="kpi-icon">💵</div>
+                        <div class="kpi-label">Ticket</div>
+                        <div class="kpi-value">{format_currency(summary["ticket_medio"])}</div>
+                    </div>
+
+                    <div class="kpi">
+                        <div class="kpi-icon">🔢</div>
+                        <div class="kpi-label">Total</div>
+                        <div class="kpi-value">{summary["total_transacoes"]}</div>
+                    </div>
+                </div>
+
+                <div class="charts-section">
+                    <div class="chart-card">
+                        <div class="chart-title">Fluxo de Caixa (30 dias)</div>
+                        <div class="chart-container">
+                            <canvas id="chart-cash-{cnpj}"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="chart-card">
+                        <div class="chart-title">Receita vs Despesa</div>
+                        <div class="chart-container">
+                            <canvas id="chart-pie-{cnpj}"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-section">
+                    <div class="table-title">Ultimas Transacoes</div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Descricao</th>
+                                    <th>Entrada</th>
+                                    <th>Saida</th>
+                                    <th>Saldo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
 '''
 
-        # Adicionar linhas de transações
-        for trans in data["livro_diario"][:50]:
-            html_content += f'''                        <tr>
-                            <td>{trans.get("data", "")}</td>
-                            <td>{trans.get("descricao", "")}</td>
-                            <td>{trans.get("categoria", "")}</td>
-                            <td>{format_value(trans.get("valor", ""))}</td>
-                        </tr>
+        for trans in data["transactions"][:25]:
+            entrada_display = format_currency(trans["entrada"]) if trans["entrada"] > 0 else "-"
+            saida_display = format_currency(trans["saida"]) if trans["saida"] > 0 else "-"
+            valor_class = "value-positive" if trans["valor"] > 0 else "value-negative"
+            descricao = trans["descricao"][:30]
+
+            html += f'''                                <tr>
+                                    <td data-label="Data">{trans["data"][:10]}</td>
+                                    <td data-label="Descricao">{descricao}</td>
+                                    <td data-label="Entrada">{entrada_display}</td>
+                                    <td data-label="Saida">{saida_display}</td>
+                                    <td data-label="Saldo" class="{valor_class}">{format_currency(trans["valor"])}</td>
+                                </tr>
 '''
 
-        html_content += '''                    </tbody>
-                </table>
+        html += '''                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
-
-            <!-- FLUXO DE CAIXA -->
-            <div class="info-box">
-                <h2>💰 Fluxo de Caixa</h2>
-                <table class="table">
-                    <thead>
-                        <tr>
 '''
 
-        # Cabeçalhos do Fluxo de Caixa
-        if data["fluxo_caixa"] and len(data["fluxo_caixa"]) > 0:
-            header_row = data["fluxo_caixa"][0]
-            for col in header_row:
-                html_content += f'                            <th>{col}</th>\n'
-
-        html_content += '''                        </tr>
-                    </thead>
-                    <tbody>
-'''
-
-        # Dados do Fluxo de Caixa
-        if data["fluxo_caixa"]:
-            for row in data["fluxo_caixa"][1:10]:
-                html_content += '                        <tr>\n'
-                for cell in row:
-                    html_content += f'                            <td>{format_value(cell)}</td>\n'
-                html_content += '                        </tr>\n'
-
-        html_content += '''                    </tbody>
-                </table>
-            </div>
-
-            <!-- ANÁLISE FINANCEIRA -->
-            <div class="info-box">
-                <h2>📈 Análise Financeira</h2>
-                <table class="table">
-                    <thead>
-                        <tr>
-'''
-
-        # Cabeçalhos da Análise Financeira
-        if data["analise_fin"] and len(data["analise_fin"]) > 0:
-            header_row = data["analise_fin"][0]
-            for col in header_row:
-                html_content += f'                            <th>{col}</th>\n'
-
-        html_content += '''                        </tr>
-                    </thead>
-                    <tbody>
-'''
-
-        # Dados da Análise Financeira
-        if data["analise_fin"]:
-            for row in data["analise_fin"][1:]:
-                html_content += '                        <tr>\n'
-                for cell in row:
-                    html_content += f'                            <td>{format_value(cell)}</td>\n'
-                html_content += '                        </tr>\n'
-
-        html_content += '''                    </tbody>
-                </table>
-            </div>
-
-            <!-- PLANEJAMENTO FINANCEIRO -->
-            <div class="info-box">
-                <h2>🎯 Planejamento Financeiro</h2>
-                <table class="table">
-                    <thead>
-                        <tr>
-'''
-
-        # Cabeçalhos do Planejamento
-        if data["planejamento"] and len(data["planejamento"]) > 0:
-            header_row = data["planejamento"][0]
-            for col in header_row:
-                html_content += f'                            <th>{col}</th>\n'
-
-        html_content += '''                        </tr>
-                    </thead>
-                    <tbody>
-'''
-
-        # Dados do Planejamento
-        if data["planejamento"]:
-            for row in data["planejamento"][1:]:
-                html_content += '                        <tr>\n'
-                for cell in row:
-                    html_content += f'                            <td>{format_value(cell)}</td>\n'
-                html_content += '                        </tr>\n'
-
-        html_content += '''                    </tbody>
-                </table>
-            </div>
-
-            <!-- CONTAS A PAGAR E RECEBER -->
-            <div class="info-box">
-                <h2>💳 Contas a Pagar e Receber</h2>
-                <table class="table">
-                    <thead>
-                        <tr>
-'''
-
-        # Cabeçalhos de Contas
-        if data["apagar_receber"] and len(data["apagar_receber"]) > 0:
-            header_row = data["apagar_receber"][0]
-            for col in header_row:
-                html_content += f'                            <th>{col}</th>\n'
-
-        html_content += '''                        </tr>
-                    </thead>
-                    <tbody>
-'''
-
-        # Dados de Contas
-        if data["apagar_receber"]:
-            for row in data["apagar_receber"][1:]:
-                html_content += '                        <tr>\n'
-                for cell in row:
-                    html_content += f'                            <td>{format_value(cell)}</td>\n'
-                html_content += '                        </tr>\n'
-
-        html_content += '''                    </tbody>
-                </table>
-            </div>
+    html += '''
         </div>
-'''
+    </main>
 
-    # Script JavaScript para trocar entre CNPJs
-    html_content += '''
-        <script>
-            function changeCNPJ() {
-                const selected = document.getElementById('cnpj-select').value;
-                const sections = document.querySelectorAll('.cnpj-section');
-                sections.forEach(section => {
-                    section.classList.add('hidden');
-                });
-                document.getElementById('cnpj-' + selected).classList.remove('hidden');
-            }
+    <footer>
+        <p>Atualizado em ''' + datetime.now().strftime("%d/%m/%Y %H:%M") + ''' | Execute: python generate_static.py</p>
+    </footer>
 
-            // Mostrar primeiro CNPJ ao carregar
-            window.addEventListener('DOMContentLoaded', function() {
-                changeCNPJ();
+    <script>
+        const chartData = ''' + json.dumps(chart_data) + ''';
+        let charts = {};
+
+        function changeCNPJ() {
+            const selected = document.getElementById('cnpj-select').value;
+            document.querySelectorAll('.cnpj-section').forEach(s => s.classList.add('hidden'));
+            document.getElementById('cnpj-' + selected).classList.remove('hidden');
+            initCharts(selected);
+        }
+
+        function initCharts(cnpj) {
+            const data = chartData[cnpj];
+            if (!data) return;
+
+            const ctxCash = document.getElementById('chart-cash-' + cnpj);
+            const ctxPie = document.getElementById('chart-pie-' + cnpj);
+
+            if (charts['cash-' + cnpj]) charts['cash-' + cnpj].destroy();
+            if (charts['pie-' + cnpj]) charts['pie-' + cnpj].destroy();
+
+            charts['cash-' + cnpj] = new Chart(ctxCash, {
+                type: 'line',
+                data: {
+                    labels: data.days,
+                    datasets: [
+                        {
+                            label: 'Entradas',
+                            data: data.entrada,
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            tension: 0.3,
+                            fill: true,
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            pointBackgroundColor: '#10b981'
+                        },
+                        {
+                            label: 'Saidas',
+                            data: data.saida,
+                            borderColor: '#ef4444',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            tension: 0.3,
+                            fill: true,
+                            borderWidth: 2,
+                            pointRadius: 3,
+                            pointBackgroundColor: '#ef4444'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, position: 'bottom' },
+                        filler: { propagate: true }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { callback: function(v) { return 'R$ ' + v.toFixed(0); } } }
+                    }
+                }
             });
-        </script>
 
-        <div class="timestamp">
-            Dados gerados em: ''' + datetime.now().strftime("%d/%m/%Y às %H:%M:%S") + '''
-            <br>
-            Para atualizar, execute novamente: <code>python generate_static.py</code>
-        </div>
-    </div>
+            charts['pie-' + cnpj] = new Chart(ctxPie, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Receita', 'Despesa'],
+                    datasets: [{
+                        data: [data.total_entrada, data.total_saida],
+                        backgroundColor: ['#10b981', '#ef4444'],
+                        borderColor: ['white', 'white'],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: true, position: 'bottom' } }
+                }
+            });
+        }
 
-    <div class="footer">
-        <p>GRUTA GESTÃO © 2024</p>
-        <p>Sistema de Gestão Financeira - Versão Estática</p>
-    </div>
+        window.addEventListener('DOMContentLoaded', () => {
+            changeCNPJ();
+        });
+
+        window.addEventListener('resize', () => {
+            const selected = document.getElementById('cnpj-select').value;
+            if (chartData[selected]) {
+                initCharts(selected);
+            }
+        });
+    </script>
 </body>
 </html>
 '''
 
-    return html_content
+    return html
 
 def main():
-    print("[INICIANDO] Geração de HTML estático com dados do Google Sheets")
-    print()
-
-    # Obter credenciais
+    print("[Gerando Dashboard...]")
     gc = get_credentials()
     if not gc:
-        print("[ERRO] Não foi possível obter credenciais. Abortando.")
+        print("[ERRO] Credenciais nao encontradas")
         return
 
-    # Coletar dados de todos os CNPJs
-    print("[PROCESSANDO] Coletando dados...")
+    print("[Processando dados...]")
     all_data = {}
     for cnpj in SPREADSHEET_IDS.keys():
         data = get_cnpj_data(gc, cnpj)
         all_data[cnpj] = data
 
-    # Gerar HTML
-    print("[GERANDO] Criando arquivo HTML...")
+    print("[Gerando HTML...]")
     html_content = generate_html(all_data)
 
-    # Salvar arquivo
-    output_path = "index.html"
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open("index.html", "w", encoding="utf-8") as f:
         f.write(html_content)
 
-    print(f"[OK] Arquivo gerado com sucesso: {output_path}")
-    print()
-    print("[PRÓXIMOS PASSOS]")
-    print("1. Abra 'index.html' em um navegador para visualizar")
-    print("2. Para fazer upload para GitHub Pages, execute:")
-    print("   git add index.html")
-    print("   git commit -m 'Atualizar dados do Google Sheets'")
-    print("   git push origin main")
-    print()
+    size = os.path.getsize("index.html") / 1024
+    print(f"[OK] Dashboard gerada: {size:.0f}KB")
 
 if __name__ == "__main__":
     main()
