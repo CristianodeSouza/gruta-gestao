@@ -67,14 +67,31 @@ def read_livro_diario(gc, spreadsheet_id):
                 continue
             try:
                 data_str = row[data_col] if len(row) > data_col else ""
+                if not data_str or data_str.strip() == "":
+                    continue
+
                 entrada = float(str(row[entrada_col]).replace(",", ".")) if len(row) > entrada_col and row[entrada_col] else 0
                 saida = float(str(row[saida_col]).replace(",", ".")) if len(row) > saida_col and row[saida_col] else 0
+
+                if entrada == 0 and saida == 0:
+                    continue
+
                 descricao = row[descricao_col] if len(row) > descricao_col else ""
 
-                parsed_date = parse_date(data_str)
+                # Parse date - handle YYYY-MM-DD HH:MM:SS format
+                parsed_date = None
+                if "00:00:00" in data_str:
+                    try:
+                        parsed_date = datetime.strptime(data_str[:10], "%Y-%m-%d")
+                    except:
+                        pass
+
+                if not parsed_date:
+                    parsed_date = parse_date(data_str)
+
                 if parsed_date:
                     transactions.append({
-                        "data": data_str,
+                        "data": data_str[:10],
                         "data_obj": parsed_date,
                         "entrada": entrada,
                         "saida": saida,
@@ -84,7 +101,8 @@ def read_livro_diario(gc, spreadsheet_id):
                 continue
 
         return sorted(transactions, key=lambda x: x["data_obj"], reverse=True)
-    except:
+    except Exception as e:
+        print(f"[AVISO] Erro ao ler Livro Diário: {str(e)}")
         return []
 
 def calculate_period_metrics(transactions, days_back):
@@ -100,87 +118,81 @@ def calculate_period_metrics(transactions, days_back):
         "count": len(period_trans)
     }
 
+def categorize_by_description(transactions):
+    categories = defaultdict(lambda: {"entrada": 0, "saida": 0, "count": 0})
+
+    for t in transactions[-1000:]:
+        desc_lower = t["descricao"].lower()
+
+        if "alim" in desc_lower or "comida" in desc_lower or "pedido" in desc_lower or "delivery" in desc_lower:
+            cat = "Alimentação"
+        elif "fornec" in desc_lower or "compra" in desc_lower or "suprimento" in desc_lower or "materia" in desc_lower:
+            cat = "Fornecimento"
+        elif "pessoal" in desc_lower or "salário" in desc_lower or "folha" in desc_lower or "funcionário" in desc_lower:
+            cat = "Pessoal"
+        elif "aluguel" in desc_lower or "imóvel" in desc_lower or "locação" in desc_lower or "aluguel" in desc_lower:
+            cat = "Aluguel"
+        elif "energia" in desc_lower or "água" in desc_lower or "telefone" in desc_lower or "internet" in desc_lower:
+            cat = "Utilidades"
+        else:
+            cat = "Outros"
+
+        if t["entrada"] > 0:
+            categories[cat]["entrada"] += t["entrada"]
+        if t["saida"] > 0:
+            categories[cat]["saida"] += t["saida"]
+        categories[cat]["count"] += 1
+
+    return categories
+
 def generate_insights(transactions):
     insights = []
 
     if not transactions:
         return insights
 
-    today_metrics = calculate_period_metrics(transactions, 1)
-    week_metrics = calculate_period_metrics(transactions, 7)
-    month_metrics = calculate_period_metrics(transactions, 30)
-    prev_month_metrics = calculate_period_metrics([t for t in transactions if t["data_obj"] < (datetime.now() - timedelta(days=30))], 30)
+    try:
+        today_metrics = calculate_period_metrics(transactions, 1) or {}
+        week_metrics = calculate_period_metrics(transactions, 7) or {}
+        month_metrics = calculate_period_metrics(transactions, 30) or {}
+        prev_month_trans = [t for t in transactions if t["data_obj"] < (datetime.now() - timedelta(days=30))]
+        prev_month_metrics = calculate_period_metrics(prev_month_trans, 30) or {} if prev_month_trans else {}
 
-    # Comparação com mês anterior
-    if month_metrics and prev_month_metrics and prev_month_metrics["entrada"] > 0:
-        growth = ((month_metrics["entrada"] - prev_month_metrics["entrada"]) / prev_month_metrics["entrada"]) * 100
-        if growth > 10:
-            insights.append(f"📈 Receita em alta! Crescimento de {growth:.1f}% vs mês anterior")
-        elif growth < -10:
-            insights.append(f"📉 Atenção! Queda de {abs(growth):.1f}% na receita vs mês anterior")
+        # Comparação com mês anterior
+        if month_metrics.get("entrada", 0) > 0 and prev_month_metrics.get("entrada", 0) > 0:
+            growth = ((month_metrics["entrada"] - prev_month_metrics["entrada"]) / prev_month_metrics["entrada"]) * 100
+            if growth > 10:
+                insights.append(f"📈 Receita em alta! Crescimento de {growth:.1f}% vs mês anterior")
+            elif growth < -10:
+                insights.append(f"📉 Atenção! Queda de {abs(growth):.1f}% na receita vs mês anterior")
 
-    # Análise de despesa
-    if month_metrics and month_metrics["entrada"] > 0:
-        expense_ratio = (month_metrics["saida"] / month_metrics["entrada"]) * 100
-        if expense_ratio > 70:
-            insights.append(f"⚠️ Despesas altas! Consumem {expense_ratio:.1f}% da receita")
-        elif expense_ratio < 30:
-            insights.append(f"✅ Eficiência ótima! Despesas apenas {expense_ratio:.1f}% da receita")
+        # Análise de despesa
+        if month_metrics.get("entrada", 0) > 0:
+            expense_ratio = (month_metrics.get("saida", 0) / month_metrics["entrada"]) * 100
+            if expense_ratio > 70:
+                insights.append(f"⚠️ Despesas altas! Consumem {expense_ratio:.1f}% da receita")
+            elif expense_ratio < 30:
+                insights.append(f"✅ Eficiência ótima! Despesas apenas {expense_ratio:.1f}% da receita")
 
-    # Ticket médio
-    if week_metrics and week_metrics["count"] > 0:
-        ticket = week_metrics["entrada"] / week_metrics["count"]
-        insights.append(f"💰 Ticket médio (7 dias): {format_currency(ticket)}")
+        # Ticket médio
+        if week_metrics.get("count", 0) > 0:
+            ticket = week_metrics["entrada"] / week_metrics["count"]
+            insights.append(f"💰 Ticket médio (7 dias): {format_currency(ticket)}")
 
-    # Dias com movimento
-    if today_metrics and today_metrics["entrada"] > 0:
-        if week_metrics and week_metrics["count"] > 0:
-            avg_daily = week_metrics["entrada"] / 7
-            if today_metrics["entrada"] > avg_daily * 1.3:
-                insights.append(f"🎯 Hoje foi um ótimo dia! {((today_metrics['entrada']/avg_daily - 1) * 100):.0f}% acima da média")
+        # Performance hoje
+        if today_metrics.get("entrada", 0) > 0:
+            if week_metrics.get("count", 0) > 0:
+                avg_daily = week_metrics["entrada"] / 7
+                if today_metrics["entrada"] > avg_daily * 1.3:
+                    insights.append(f"🎯 Hoje foi ótimo! {((today_metrics['entrada']/avg_daily - 1) * 100):.0f}% acima da média")
+    except Exception as e:
+        print(f"[AVISO] Erro ao gerar insights: {str(e)}")
 
-    # Sazonalidade por dia da semana
-    day_totals = defaultdict(lambda: {"entrada": 0, "count": 0})
-    for t in transactions[-90:]:  # últimos 90 dias
-        day_name = t["data_obj"].strftime("%A")
-        day_totals[day_name]["entrada"] += t["entrada"]
-        day_totals[day_name]["count"] += 1
-
-    if day_totals:
-        best_day = max(day_totals.items(), key=lambda x: x[1]["entrada"] / max(x[1]["count"], 1) if x[1]["count"] > 0 else 0)
-        day_pt = {"Monday": "Segunda", "Tuesday": "Terça", "Wednesday": "Quarta", "Thursday": "Quinta", "Friday": "Sexta", "Saturday": "Sábado", "Sunday": "Domingo"}
-        insights.append(f"📅 Melhor dia da semana: {day_pt.get(best_day[0], best_day[0])}")
-
-    # Concentração de receita
-    if month_metrics and month_metrics["count"] > 0:
-        top_10_pct = sum(t["entrada"] for t in transactions[:int(len(transactions) * 0.1)])
-        if month_metrics["entrada"] > 0:
-            concentration = (top_10_pct / month_metrics["entrada"]) * 100
-            if concentration > 40:
-                insights.append(f"🎯 {concentration:.0f}% da receita vem de poucos clientes - diversificar é importante")
-
-    return insights[:5]  # Top 5 insights
-
-def categorize_by_description(transactions):
-    categories = defaultdict(float)
-    for t in transactions[-1000:]:  # últimos 1000 para análise
-        desc_lower = t["descricao"].lower()
-        if "alim" in desc_lower or "comida" in desc_lower or "pedido" in desc_lower:
-            categories["Alimentação"] += t["entrada"] if t["entrada"] > 0 else -t["saida"]
-        elif "fornec" in desc_lower or "compra" in desc_lower or "suprimento" in desc_lower:
-            categories["Fornecimento"] += t["entrada"] if t["entrada"] > 0 else -t["saida"]
-        elif "pessoal" in desc_lower or "salário" in desc_lower or "folha" in desc_lower:
-            categories["Pessoal"] += t["entrada"] if t["entrada"] > 0 else -t["saida"]
-        elif "aluguel" in desc_lower or "imóvel" in desc_lower or "locação" in desc_lower:
-            categories["Aluguel"] += t["entrada"] if t["entrada"] > 0 else -t["saida"]
-        else:
-            categories["Outros"] += t["entrada"] if t["entrada"] > 0 else -t["saida"]
-
-    return categories
+    return insights[:6]
 
 def get_daily_data(transactions):
     daily = defaultdict(lambda: {"entrada": 0, "saida": 0})
-    for t in transactions[-90:]:  # últimos 90 dias
+    for t in transactions[-90:]:
         date_key = t["data_obj"].strftime("%Y-%m-%d")
         daily[date_key]["entrada"] += t["entrada"]
         daily[date_key]["saida"] += t["saida"]
@@ -190,6 +202,10 @@ def get_cnpj_data(gc, cnpj):
     try:
         spreadsheet_id = SPREADSHEET_IDS[cnpj]
         transactions = read_livro_diario(gc, spreadsheet_id)
+
+        if not transactions:
+            print(f"[AVISO] Nenhuma transação encontrada para {cnpj}")
+            return None
 
         total_entrada = sum(t["entrada"] for t in transactions)
         total_saida = sum(t["saida"] for t in transactions)
@@ -212,6 +228,7 @@ def get_cnpj_data(gc, cnpj):
             "saldo": saldo,
             "month_entrada": month_metrics["entrada"],
             "month_saida": month_metrics["saida"],
+            "month_count": month_metrics["count"],
             "week_entrada": week_metrics["entrada"],
             "week_saida": week_metrics["saida"],
             "margem": margem,
@@ -222,7 +239,7 @@ def get_cnpj_data(gc, cnpj):
             "daily_data": daily_data
         }
     except Exception as e:
-        print(f"[ERRO] {str(e)}")
+        print(f"[ERRO] {cnpj}: {str(e)}")
         return None
 
 def generate_html(all_data):
@@ -274,7 +291,7 @@ def generate_html(all_data):
         .insights-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
         .insight-item {
             background: rgba(255,255,255,0.15); padding: 1rem; border-radius: 6px;
-            border-left: 4px solid rgba(255,255,255,0.5);
+            border-left: 4px solid rgba(255,255,255,0.5); font-size: 0.95rem;
         }
 
         .kpi-section {
@@ -298,6 +315,19 @@ def generate_html(all_data):
         .chart-title { font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; color: var(--text); border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
         .chart-container { position: relative; height: 250px; width: 100%; }
 
+        .analysis-section { background: white; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .analysis-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; color: var(--text); border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
+        .analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+        .analysis-item { border: 1px solid var(--border); border-radius: 6px; padding: 1rem; }
+        .analysis-item-label { font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.5rem; font-weight: 600; }
+        .analysis-item-value { font-size: 1.25rem; font-weight: 700; color: var(--accent); }
+        .analysis-item-sub { font-size: 0.8rem; color: var(--text-light); margin-top: 0.25rem; }
+
+        .category-table { width: 100%; border-collapse: collapse; }
+        .category-table th, .category-table td { padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+        .category-table th { background: #f5f5f5; font-weight: 600; font-size: 0.9rem; }
+        .category-table tbody tr:hover { background: #f9f9f9; }
+
         .table-section { background: white; border-radius: 8px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 1.5rem; }
         .table-title { font-size: 1rem; font-weight: 700; margin-bottom: 1rem; color: var(--text); }
         .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -315,6 +345,7 @@ def generate_html(all_data):
         @media (max-width: 768px) {
             .insights-list { grid-template-columns: 1fr; }
             .kpi-section { grid-template-columns: 1fr 1fr; }
+            .analysis-grid { grid-template-columns: 1fr; }
             .charts-section { grid-template-columns: 1fr; }
             .chart-container { height: 200px; }
             table th, table td { padding: 0.8rem; font-size: 0.85rem; }
@@ -331,6 +362,7 @@ def generate_html(all_data):
             table tr { border-bottom: 2px solid var(--border); margin-bottom: 1rem; }
             table td { padding: 0.75rem 0; text-align: right; }
             table td[data-label]:before { float: left; }
+            .analysis-grid { grid-template-columns: 1fr; }
             footer { font-size: 0.7rem; padding: 0.75rem; }
         }
     </style>
@@ -351,12 +383,54 @@ def generate_html(all_data):
 
     <main>
         <div class="container">
+            <div class="filter-section" style="background: white; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.5rem; font-weight: 600;">Data Inicial</label>
+                        <input type="date" id="date-from" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.5rem; font-weight: 600;">Data Final</label>
+                        <input type="date" id="date-to" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem;">
+                    </div>
+                    <div style="display: flex; align-items: flex-end;">
+                        <button onclick="filterByDate()" style="width: 100%; padding: 0.75rem; background: var(--accent); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.95rem;">Filtrar</button>
+                    </div>
+                    <div style="display: flex; align-items: flex-end;">
+                        <button onclick="resetFilter()" style="width: 100%; padding: 0.75rem; background: var(--text-light); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.95rem;">Resetar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="overview-section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">
+                <div style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem;">📊 Visão Geral Consolidada (Todos os CNPJs)</div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                    <div style="background: rgba(255,255,255,0.15); padding: 1rem; border-radius: 6px;">
+                        <div style="font-size: 0.85rem; opacity: 0.9;">Receita Total</div>
+                        <div id="overview-entrada" style="font-size: 1.5rem; font-weight: 700; margin-top: 0.5rem;">R$ 0,00</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.15); padding: 1rem; border-radius: 6px;">
+                        <div style="font-size: 0.85rem; opacity: 0.9;">Despesa Total</div>
+                        <div id="overview-saida" style="font-size: 1.5rem; font-weight: 700; margin-top: 0.5rem;">R$ 0,00</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.15); padding: 1rem; border-radius: 6px;">
+                        <div style="font-size: 0.85rem; opacity: 0.9;">Saldo Líquido</div>
+                        <div id="overview-saldo" style="font-size: 1.5rem; font-weight: 700; margin-top: 0.5rem;">R$ 0,00</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.15); padding: 1rem; border-radius: 6px;">
+                        <div style="font-size: 0.85rem; opacity: 0.9;">Total de Transações</div>
+                        <div id="overview-count" style="font-size: 1.5rem; font-weight: 700; margin-top: 0.5rem;">0</div>
+                    </div>
+                </div>
+            </div>
 '''
 
     chart_data = {}
+    transactions_data = {}
 
     for cnpj, data in all_data.items():
         if not data:
+            print(f"[AVISO] Sem dados para {cnpj}")
             continue
 
         # Preparar dados para gráficos
@@ -369,8 +443,13 @@ def generate_html(all_data):
             "entrada": daily_entrada,
             "saida": daily_saida,
             "categories": list(data["categories"].keys()),
-            "categoria_valores": list(data["categories"].values()),
+            "categoria_entrada": [data["categories"][c]["entrada"] for c in data["categories"].keys()],
         }
+
+        transactions_data[cnpj] = [
+            {"data": t["data"], "entrada": t["entrada"], "saida": t["saida"]}
+            for t in data["transactions"]
+        ]
 
         # Insights
         html += f'''            <div id="cnpj-{cnpj}" class="cnpj-section">
@@ -379,8 +458,11 @@ def generate_html(all_data):
                     <div class="insights-list">
 '''
 
-        for insight in data["insights"]:
-            html += f'                        <div class="insight-item">{insight}</div>\n'
+        if data["insights"]:
+            for insight in data["insights"]:
+                html += f'                        <div class="insight-item">{insight}</div>\n'
+        else:
+            html += '                        <div class="insight-item">Processando dados...</div>\n'
 
         html += '''                    </div>
                 </div>
@@ -404,7 +486,7 @@ def generate_html(all_data):
                         <div class="kpi-icon">💰</div>
                         <div class="kpi-label">Saldo</div>
                         <div class="kpi-value">''' + format_currency(data["saldo"]) + '''</div>
-                        <div class="kpi-subtext">Líquido</div>
+                        <div class="kpi-subtext">Líquido Total</div>
                     </div>
 
                     <div class="kpi warning">
@@ -418,7 +500,7 @@ def generate_html(all_data):
                         <div class="kpi-icon">💵</div>
                         <div class="kpi-label">Ticket Médio</div>
                         <div class="kpi-value">''' + format_currency(data["ticket_medio"]) + '''</div>
-                        <div class="kpi-subtext">Por transação</div>
+                        <div class="kpi-subtext">Por transação (30d)</div>
                     </div>
 
                     <div class="kpi">
@@ -445,15 +527,72 @@ def generate_html(all_data):
                     </div>
 
                     <div class="chart-card">
-                        <div class="chart-title">📂 Distribuição por Categoria</div>
+                        <div class="chart-title">📂 Receita por Categoria</div>
                         <div class="chart-container">
                             <canvas id="chart-cat-''' + cnpj + '''"></canvas>
                         </div>
                     </div>
                 </div>
 
+                <div class="analysis-section">
+                    <div class="analysis-title">📊 Análise Detalhada de Dados</div>
+                    <div class="analysis-grid">
+                        <div class="analysis-item">
+                            <div class="analysis-item-label">Transações (30 dias)</div>
+                            <div class="analysis-item-value">''' + str(data["month_count"]) + '''</div>
+                            <div class="analysis-item-sub">Total: ''' + str(data["total_transacoes"]) + '''</div>
+                        </div>
+                        <div class="analysis-item">
+                            <div class="analysis-item-label">Receita por Transação</div>
+                            <div class="analysis-item-value">''' + format_currency(data["month_entrada"] / max(data["month_count"], 1)) + '''</div>
+                            <div class="analysis-item-sub">Ticket médio</div>
+                        </div>
+                        <div class="analysis-item">
+                            <div class="analysis-item-label">Lucro (30 dias)</div>
+                            <div class="analysis-item-value">''' + format_currency(data["month_entrada"] - data["month_saida"]) + '''</div>
+                            <div class="analysis-item-sub">Resultado do período</div>
+                        </div>
+                        <div class="analysis-item">
+                            <div class="analysis-item-label">Taxa de Lucratividade</div>
+                            <div class="analysis-item-value">''' + f'{((data["month_entrada"] - data["month_saida"]) / max(data["month_entrada"], 1) * 100):.1f}%' + '''</div>
+                            <div class="analysis-item-sub">Lucro / Receita</div>
+                        </div>
+                    </div>
+
+                    <h3 style="margin-top: 1.5rem; margin-bottom: 0.75rem; font-size: 0.95rem; color: var(--text);">Receita e Despesa por Categoria</h3>
+                    <div style="overflow-x: auto;">
+                        <table class="category-table">
+                            <thead>
+                                <tr>
+                                    <th>Categoria</th>
+                                    <th style="text-align: right;">Receita</th>
+                                    <th style="text-align: right;">Despesa</th>
+                                    <th style="text-align: right;">Transações</th>
+                                    <th style="text-align: right;">% Receita</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+'''
+
+        total_entrada = data["month_entrada"]
+        for cat, values in sorted(data["categories"].items(), key=lambda x: x[1]["entrada"], reverse=True):
+            pct = (values["entrada"] / max(total_entrada, 1)) * 100
+            html += f'''                                <tr>
+                                    <td><strong>{cat}</strong></td>
+                                    <td style="text-align: right;">{format_currency(values["entrada"])}</td>
+                                    <td style="text-align: right;">{format_currency(values["saida"])}</td>
+                                    <td style="text-align: right;">{values["count"]}</td>
+                                    <td style="text-align: right;"><strong>{pct:.1f}%</strong></td>
+                                </tr>
+'''
+
+        html += '''                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <div class="table-section">
-                    <div class="table-title">📋 Últimas Transações</div>
+                    <div class="table-title">📋 Últimas Transações (últimas 50)</div>
                     <div class="table-wrapper">
                         <table>
                             <thead>
@@ -468,12 +607,12 @@ def generate_html(all_data):
                             <tbody>
 '''
 
-        for trans in data["transactions"][:25]:
+        for trans in data["transactions"][:50]:
             entrada_display = format_currency(trans["entrada"]) if trans["entrada"] > 0 else "-"
             saida_display = format_currency(trans["saida"]) if trans["saida"] > 0 else "-"
             valor = trans["entrada"] - trans["saida"]
             valor_class = "value-positive" if valor > 0 else "value-negative"
-            descricao = trans["descricao"][:30]
+            descricao = trans["descricao"][:40]
 
             html += f'''                                <tr>
                                     <td data-label="Data">{trans["data"][:10]}</td>
@@ -500,13 +639,69 @@ def generate_html(all_data):
 
     <script>
         const chartData = ''' + json.dumps(chart_data) + ''';
+        const allTransactions = ''' + json.dumps(transactions_data) + ''';
         let charts = {};
+        let filteredData = null;
+
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+        }
+
+        function updateOverview() {
+            const dateFrom = document.getElementById('date-from').value;
+            const dateTo = document.getElementById('date-to').value;
+
+            let totalEntrada = 0, totalSaida = 0, totalCount = 0;
+
+            for (const cnpj in allTransactions) {
+                const trans = allTransactions[cnpj];
+                for (const t of trans) {
+                    const transDate = t.data;
+                    if ((dateFrom === '' || transDate >= dateFrom) && (dateTo === '' || transDate <= dateTo)) {
+                        totalEntrada += t.entrada;
+                        totalSaida += t.saida;
+                        totalCount += 1;
+                    }
+                }
+            }
+
+            document.getElementById('overview-entrada').textContent = formatCurrency(totalEntrada);
+            document.getElementById('overview-saida').textContent = formatCurrency(totalSaida);
+            document.getElementById('overview-saldo').textContent = formatCurrency(totalEntrada - totalSaida);
+            document.getElementById('overview-count').textContent = totalCount;
+        }
+
+        function filterByDate() {
+            const dateFrom = document.getElementById('date-from').value;
+            const dateTo = document.getElementById('date-to').value;
+
+            if (dateFrom && dateTo) {
+                if (dateFrom > dateTo) {
+                    alert('Data inicial não pode ser maior que data final');
+                    return;
+                }
+                document.querySelectorAll('table tbody tr').forEach(tr => {
+                    const dateCell = tr.cells[0]?.textContent || '';
+                    const show = (dateCell >= dateFrom && dateCell <= dateTo);
+                    tr.style.display = show ? '' : 'none';
+                });
+            }
+
+            updateOverview();
+        }
+
+        function resetFilter() {
+            document.getElementById('date-from').value = '';
+            document.getElementById('date-to').value = '';
+            document.querySelectorAll('table tbody tr').forEach(tr => tr.style.display = '');
+            updateOverview();
+        }
 
         function changeCNPJ() {
             const selected = document.getElementById('cnpj-select').value;
             document.querySelectorAll('.cnpj-section').forEach(s => s.classList.add('hidden'));
             document.getElementById('cnpj-' + selected).classList.remove('hidden');
-            initCharts(selected);
+            setTimeout(() => initCharts(selected), 100);
         }
 
         function initCharts(cnpj) {
@@ -577,21 +772,15 @@ def generate_html(all_data):
             // Gráfico de Categorias
             const ctxCat = document.getElementById('chart-cat-' + cnpj);
             if (ctxCat && charts['cat-' + cnpj]) charts['cat-' + cnpj].destroy();
-            if (ctxCat) {
+            if (ctxCat && data.categories && data.categories.length > 0) {
                 charts['cat-' + cnpj] = new Chart(ctxCat, {
                     type: 'bar',
                     data: {
                         labels: data.categories,
                         datasets: [{
-                            label: 'Valor',
-                            data: data.categoria_valores,
-                            backgroundColor: [
-                                '#3b82f6',
-                                '#10b981',
-                                '#f59e0b',
-                                '#ef4444',
-                                '#8b5cf6'
-                            ]
+                            label: 'Receita',
+                            data: data.categoria_entrada,
+                            backgroundColor: '#3b82f6'
                         }]
                     },
                     options: {
@@ -608,6 +797,7 @@ def generate_html(all_data):
         window.addEventListener('load', () => {
             const first = document.getElementById('cnpj-select').value;
             changeCNPJ();
+            updateOverview();
         });
     </script>
 </body>
