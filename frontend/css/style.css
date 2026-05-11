@@ -215,6 +215,51 @@ body {
     background: var(--primary-dark);
 }
 
+/* INFO CNPJ */
+.cnpj-info {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: white;
+    padding: 2rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.info-header {
+    margin-bottom: 1.5rem;
+}
+
+.info-header h3 {
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    opacity: 0.9;
+    margin-bottom: 0.5rem;
+}
+
+.cnpj-numero {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 0.3rem;
+}
+
+.cnpj-empresa {
+    font-size: 1rem;
+    opacity: 0.95;
+}
+
+.info-stats {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(255,255,255,0.2);
+}
+
+.stat {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
 /* CARDS */
 .cards-row {
     display: grid;

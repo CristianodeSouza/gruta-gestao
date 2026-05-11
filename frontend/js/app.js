@@ -4,6 +4,12 @@ let currentCNPJ = null;
 let currentData = null;
 let charts = {};
 
+// Mapear nomes de CNPJs
+const CNPJ_NAMES = {
+    "95594065000119": "GRUTA - Grutatagliarierodrigues",
+    "65313187/0001-29": "GRUTA - Nova Empresa Delivery"
+};
+
 // Elementos DOM
 const cnpjSelect = document.getElementById('cnpj-select');
 const tabButtons = document.querySelectorAll('.tab-btn');
@@ -154,6 +160,14 @@ function updateDashboard() {
 
     const fc = currentData.fluxo_caixa;
     const livro = currentData.livro_diario;
+
+    // Atualizar informacoes do CNPJ
+    document.getElementById('cnpj-display').textContent = currentCNPJ;
+    document.getElementById('cnpj-nome').textContent = CNPJ_NAMES[currentCNPJ] || 'CNPJ Desconhecido';
+
+    const now = new Date();
+    document.getElementById('info-ultima-atualizacao').textContent = `Atualizado: ${now.toLocaleTimeString('pt-BR')}`;
+    document.getElementById('info-total-registros').textContent = `Registros: ${livro.length.toLocaleString('pt-BR')}`;
 
     // Atualizar cards
     document.getElementById('card-entradas').textContent = formatCurrency(fc.entradas);
