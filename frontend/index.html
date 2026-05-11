@@ -3,303 +3,128 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GRUTA GESTAO - Gestão Completa de Restaurante</title>
-    <link rel="stylesheet" href="css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <title>GRUTA GESTAO - Gestão Financeira</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .header h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
+        .header p { font-size: 1rem; opacity: 0.9; }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .info-box {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .info-box h2 { color: #2196F3; margin-bottom: 1rem; }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .table thead {
+            background: #f5f5f5;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .table th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .table td {
+            padding: 1rem;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .table tbody tr:hover { background: #f9f9f9; }
+
+        .footer {
+            background: #212121;
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            margin-top: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 { font-size: 1.8rem; }
+            .container { padding: 1rem; }
+            .table th, .table td { padding: 0.8rem; font-size: 0.9rem; }
+        }
+    </style>
 </head>
 <body>
-    <div class="container-app">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-content">
-                <div class="logo">
-                    <h1>GRUTA GESTÃO</h1>
-                    <p class="subtitle">Sistema Completo de Gestão Financeira</p>
-                </div>
-                <div class="header-right">
-                    <div class="cnpj-selector">
-                        <label for="cnpj-select">Selecionar CNPJ:</label>
-                        <select id="cnpj-select">
-                            <option value="">Carregando...</option>
-                        </select>
-                    </div>
-                    <div class="status">
-                        <span id="sync-status" class="status-indicator">●</span>
-                        <span id="sync-time">--:--:--</span>
-                    </div>
-                </div>
-            </div>
-        </header>
-
-        <!-- Navigation -->
-        <nav class="nav-tabs">
-            <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
-            <button class="tab-btn" data-tab="livro-diario">Livro Diário</button>
-            <button class="tab-btn" data-tab="fluxo-caixa">Fluxo de Caixa</button>
-            <button class="tab-btn" data-tab="contas">Contas</button>
-            <button class="tab-btn" data-tab="planejamento">Planejamento</button>
-            <button class="tab-btn" data-tab="analise">Análise</button>
-            <button class="tab-btn" data-tab="cadastros">Cadastros</button>
-        </nav>
-
-        <!-- Main Content -->
-        <main class="main-content">
-
-            <!-- DASHBOARD TAB -->
-            <section id="dashboard" class="tab-content active">
-                <div class="dashboard-grid">
-                    <!-- Info do CNPJ -->
-                    <div class="cnpj-info">
-                        <div class="info-header">
-                            <h3>CNPJ Selecionado</h3>
-                            <p id="cnpj-display" class="cnpj-numero">--</p>
-                            <p id="cnpj-nome" class="cnpj-empresa">--</p>
-                        </div>
-                        <div class="info-stats">
-                            <span id="info-ultima-atualizacao" class="stat">Atualizado: --:--:--</span>
-                            <span id="info-total-registros" class="stat">Registros: 0</span>
-                        </div>
-                    </div>
-
-                    <!-- Summary Cards -->
-                    <div class="cards-row">
-                        <div class="card card-primary">
-                            <div class="card-icon">💰</div>
-                            <div class="card-content">
-                                <h3>Entradas</h3>
-                                <p class="card-value" id="card-entradas">R$ 0,00</p>
-                            </div>
-                        </div>
-                        <div class="card card-danger">
-                            <div class="card-icon">📊</div>
-                            <div class="card-content">
-                                <h3>Saídas</h3>
-                                <p class="card-value" id="card-saidas">R$ 0,00</p>
-                            </div>
-                        </div>
-                        <div class="card card-success">
-                            <div class="card-icon">✓</div>
-                            <div class="card-content">
-                                <h3>Saldo</h3>
-                                <p class="card-value" id="card-saldo">R$ 0,00</p>
-                            </div>
-                        </div>
-                        <div class="card card-info">
-                            <div class="card-icon">📋</div>
-                            <div class="card-content">
-                                <h3>Transações</h3>
-                                <p class="card-value" id="card-transacoes">0</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Charts -->
-                    <div class="charts-row">
-                        <div class="chart-container">
-                            <h3>Resumo Financeiro</h3>
-                            <canvas id="chartResumo"></canvas>
-                        </div>
-                    </div>
-
-                    <!-- Recent Transactions -->
-                    <div class="transactions-row">
-                        <h3>Últimas Transações</h3>
-                        <table class="table" id="table-recentes">
-                            <thead>
-                                <tr>
-                                    <th>Data</th>
-                                    <th>Descrição</th>
-                                    <th>Categoria</th>
-                                    <th>Valor</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr class="loading-row">
-                                    <td colspan="4">Carregando...</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-
-            <!-- LIVRO DIÁRIO TAB -->
-            <section id="livro-diario" class="tab-content">
-                <div class="section-header">
-                    <h2>Livro Diário - Transações Detalhadas</h2>
-                    <div class="filters">
-                        <input type="text" id="filter-descricao" placeholder="Filtrar por descrição...">
-                        <input type="text" id="filter-categoria" placeholder="Filtrar por categoria...">
-                        <button id="btn-export">Exportar CSV</button>
-                    </div>
-                </div>
-                <table class="table table-large" id="table-livro-diario">
-                    <thead>
-                        <tr>
-                            <th>Data</th>
-                            <th>Descrição</th>
-                            <th>Categoria</th>
-                            <th>Valor</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="loading-row">
-                            <td colspan="4">Carregando...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </section>
-
-            <!-- FLUXO DE CAIXA TAB -->
-            <section id="fluxo-caixa" class="tab-content">
-                <div class="section-header">
-                    <h2>Fluxo de Caixa - Resumo Mensal</h2>
-                </div>
-                <div class="fluxo-grid">
-                    <div class="card card-primary">
-                        <h3>Total de Entradas</h3>
-                        <p class="valor" id="fluxo-entradas">R$ 0,00</p>
-                    </div>
-                    <div class="card card-danger">
-                        <h3>Total de Saídas</h3>
-                        <p class="valor" id="fluxo-saidas">R$ 0,00</p>
-                    </div>
-                    <div class="card card-success">
-                        <h3>Saldo Líquido</h3>
-                        <p class="valor" id="fluxo-saldo">R$ 0,00</p>
-                    </div>
-                </div>
-                <div class="chart-container">
-                    <canvas id="chartFluxo"></canvas>
-                </div>
-            </section>
-
-            <!-- CONTAS A PAGAR/RECEBER TAB -->
-            <section id="contas" class="tab-content">
-                <div class="section-header">
-                    <h2>Contas a Pagar e Receber</h2>
-                </div>
-                <div class="contas-info">
-                    <h3>Resumo de Contas Pendentes</h3>
-                    <div class="info-row">
-                        <div class="info-box">
-                            <span class="label">Total a Receber:</span>
-                            <span class="value" id="total-receber">R$ 0,00</span>
-                        </div>
-                        <div class="info-box">
-                            <span class="label">Total a Pagar:</span>
-                            <span class="value" id="total-pagar">R$ 0,00</span>
-                        </div>
-                    </div>
-                </div>
-                <table class="table" id="table-contas">
-                    <thead>
-                        <tr>
-                            <th>Descrição</th>
-                            <th>Valor</th>
-                            <th>Data</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="loading-row">
-                            <td colspan="4">Carregando...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </section>
-
-            <!-- PLANEJAMENTO FINANCEIRO TAB -->
-            <section id="planejamento" class="tab-content">
-                <div class="section-header">
-                    <h2>Planejamento Financeiro</h2>
-                </div>
-                <div class="chart-container">
-                    <canvas id="chartPlanejamento"></canvas>
-                </div>
-                <table class="table" id="table-planejamento">
-                    <thead>
-                        <tr>
-                            <th>Período</th>
-                            <th>Previsão Entradas</th>
-                            <th>Previsão Saídas</th>
-                            <th>Previsão Saldo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="loading-row">
-                            <td colspan="4">Carregando...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </section>
-
-            <!-- ANÁLISE FINANCEIRA TAB -->
-            <section id="analise" class="tab-content">
-                <div class="section-header">
-                    <h2>Análise Financeira</h2>
-                </div>
-                <div class="analise-cards">
-                    <div class="card">
-                        <h3>Índice de Saúde Financeira</h3>
-                        <p id="analise-saude" class="valor">--</p>
-                    </div>
-                    <div class="card">
-                        <h3>Tendência</h3>
-                        <p id="analise-tendencia" class="valor">--</p>
-                    </div>
-                    <div class="card">
-                        <h3>Margem Operacional</h3>
-                        <p id="analise-margem" class="valor">--</p>
-                    </div>
-                </div>
-                <table class="table" id="table-analise">
-                    <thead>
-                        <tr>
-                            <th>Métrica</th>
-                            <th>Valor</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="loading-row">
-                            <td colspan="3">Carregando...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </section>
-
-            <!-- CADASTROS TAB -->
-            <section id="cadastros" class="tab-content">
-                <div class="section-header">
-                    <h2>Cadastros - Contas e Categorias</h2>
-                </div>
-                <table class="table" id="table-cadastros">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Nome</th>
-                            <th>Tipo</th>
-                            <th>Saldo</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="loading-row">
-                            <td colspan="5">Carregando...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </section>
-
-        </main>
-
-        <!-- Footer -->
-        <footer class="footer">
-            <p>GRUTA GESTÃO © 2024 | Última sincronização: <span id="footer-timestamp">--:--:--</span></p>
-        </footer>
+    <div class="header">
+        <h1>GRUTA GESTÃO</h1>
+        <p>Sistema de Gestão Financeira - Versão Estática</p>
     </div>
 
-    <script src="js/app.js"></script>
+    <div class="container">
+        <div class="info-box">
+            <h2>Informações</h2>
+            <p>Esta é uma versão estática do GRUTA GESTÃO.</p>
+            <p>Os dados estão congelados nesta data e hora.</p>
+            <p><strong>Para atualizar os dados:</strong> Execute o script Python <code>generate_static.py</code> novamente.</p>
+        </div>
+
+        <div class="info-box">
+            <h2>CNPJs Disponíveis</h2>
+            <ul>
+                <li>95594065000119 - GRUTA - Grutatagliarierodrigues</li>
+                <li>65313187/0001-29 - GRUTA - Nova Empresa Delivery</li>
+            </ul>
+        </div>
+
+        <div class="info-box">
+            <h2>Instruções</h2>
+            <ol>
+                <li>Para gerar dados com informações atualizadas, execute:
+                    <pre>python generate_static.py</pre>
+                </li>
+                <li>Faça commit e push para GitHub</li>
+                <li>GitHub Pages atualizará automaticamente em alguns segundos</li>
+            </ol>
+        </div>
+
+        <div class="info-box">
+            <h2>Status Atual</h2>
+            <p>✓ GitHub Pages está ativo</p>
+            <p>✓ HTML estático funcionando</p>
+            <p>✓ Dados podem ser atualizados executando o script Python</p>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>GRUTA GESTÃO © 2024</p>
+        <p>Versão Estática - Sem Backend</p>
+    </div>
 </body>
 </html>
