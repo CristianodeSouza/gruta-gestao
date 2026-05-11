@@ -24,10 +24,22 @@ CACHE_DURATION = 300  # 5 minutos
 
 # Inicializar gspread
 try:
-    credentials_path = os.path.expanduser("~") + r"\Downloads\gruta-gestao-7b3adc499256.json"
-    if not os.path.exists(credentials_path):
-        credentials_path = r"C:\Users\User\Downloads\gruta-gestao-7b3adc499256.json"
-    gc = gspread.service_account(filename=credentials_path)
+    # Tentar usar variavel de ambiente (Railway)
+    credentials_json = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+
+    if credentials_json:
+        # Se estiver em Railway, usar a variavel de ambiente
+        creds_dict = json.loads(credentials_json)
+        gc = gspread.service_account_from_dict(creds_dict)
+        print(f"[OK] Autenticacao via variavel de ambiente (Railway)")
+    else:
+        # Se estiver local, usar arquivo
+        credentials_path = os.path.expanduser("~") + r"\Downloads\gruta-gestao-7b3adc499256.json"
+        if not os.path.exists(credentials_path):
+            credentials_path = r"C:\Users\User\Downloads\gruta-gestao-7b3adc499256.json"
+        gc = gspread.service_account(filename=credentials_path)
+        print(f"[OK] Autenticacao via arquivo local")
+
     print(f"[OK] Autenticacao Google Sheets bem-sucedida")
 except Exception as e:
     print(f"[ERRO] Falha na autenticacao: {str(e)}")
