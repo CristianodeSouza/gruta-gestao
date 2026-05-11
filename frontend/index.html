@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GRUTA GESTAO - Gestão Completa de Restaurante</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+</head>
+<body>
+    <div class="container-app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <h1>GRUTA GESTÃO</h1>
+                    <p class="subtitle">Sistema Completo de Gestão Financeira</p>
+                </div>
+                <div class="header-right">
+                    <div class="cnpj-selector">
+                        <label for="cnpj-select">Selecionar CNPJ:</label>
+                        <select id="cnpj-select">
+                            <option value="">Carregando...</option>
+                        </select>
+                    </div>
+                    <div class="status">
+                        <span id="sync-status" class="status-indicator">●</span>
+                        <span id="sync-time">--:--:--</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="nav-tabs">
+            <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+            <button class="tab-btn" data-tab="livro-diario">Livro Diário</button>
+            <button class="tab-btn" data-tab="fluxo-caixa">Fluxo de Caixa</button>
+            <button class="tab-btn" data-tab="contas">Contas</button>
+            <button class="tab-btn" data-tab="planejamento">Planejamento</button>
+            <button class="tab-btn" data-tab="analise">Análise</button>
+            <button class="tab-btn" data-tab="cadastros">Cadastros</button>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+
+            <!-- DASHBOARD TAB -->
+            <section id="dashboard" class="tab-content active">
+                <div class="dashboard-grid">
+                    <!-- Summary Cards -->
+                    <div class="cards-row">
+                        <div class="card card-primary">
+                            <div class="card-icon">💰</div>
+                            <div class="card-content">
+                                <h3>Entradas</h3>
+                                <p class="card-value" id="card-entradas">R$ 0,00</p>
+                            </div>
+                        </div>
+                        <div class="card card-danger">
+                            <div class="card-icon">📊</div>
+                            <div class="card-content">
+                                <h3>Saídas</h3>
+                                <p class="card-value" id="card-saidas">R$ 0,00</p>
+                            </div>
+                        </div>
+                        <div class="card card-success">
+                            <div class="card-icon">✓</div>
+                            <div class="card-content">
+                                <h3>Saldo</h3>
+                                <p class="card-value" id="card-saldo">R$ 0,00</p>
+                            </div>
+                        </div>
+                        <div class="card card-info">
+                            <div class="card-icon">📋</div>
+                            <div class="card-content">
+                                <h3>Transações</h3>
+                                <p class="card-value" id="card-transacoes">0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts -->
+                    <div class="charts-row">
+                        <div class="chart-container">
+                            <h3>Resumo Financeiro</h3>
+                            <canvas id="chartResumo"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Recent Transactions -->
+                    <div class="transactions-row">
+                        <h3>Últimas Transações</h3>
+                        <table class="table" id="table-recentes">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Descrição</th>
+                                    <th>Categoria</th>
+                                    <th>Valor</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="loading-row">
+                                    <td colspan="4">Carregando...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- LIVRO DIÁRIO TAB -->
+            <section id="livro-diario" class="tab-content">
+                <div class="section-header">
+                    <h2>Livro Diário - Transações Detalhadas</h2>
+                    <div class="filters">
+                        <input type="text" id="filter-descricao" placeholder="Filtrar por descrição...">
+                        <input type="text" id="filter-categoria" placeholder="Filtrar por categoria...">
+                        <button id="btn-export">Exportar CSV</button>
+                    </div>
+                </div>
+                <table class="table table-large" id="table-livro-diario">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Descrição</th>
+                            <th>Categoria</th>
+                            <th>Valor</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="loading-row">
+                            <td colspan="4">Carregando...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- FLUXO DE CAIXA TAB -->
+            <section id="fluxo-caixa" class="tab-content">
+                <div class="section-header">
+                    <h2>Fluxo de Caixa - Resumo Mensal</h2>
+                </div>
+                <div class="fluxo-grid">
+                    <div class="card card-primary">
+                        <h3>Total de Entradas</h3>
+                        <p class="valor" id="fluxo-entradas">R$ 0,00</p>
+                    </div>
+                    <div class="card card-danger">
+                        <h3>Total de Saídas</h3>
+                        <p class="valor" id="fluxo-saidas">R$ 0,00</p>
+                    </div>
+                    <div class="card card-success">
+                        <h3>Saldo Líquido</h3>
+                        <p class="valor" id="fluxo-saldo">R$ 0,00</p>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chartFluxo"></canvas>
+                </div>
+            </section>
+
+            <!-- CONTAS A PAGAR/RECEBER TAB -->
+            <section id="contas" class="tab-content">
+                <div class="section-header">
+                    <h2>Contas a Pagar e Receber</h2>
+                </div>
+                <div class="contas-info">
+                    <h3>Resumo de Contas Pendentes</h3>
+                    <div class="info-row">
+                        <div class="info-box">
+                            <span class="label">Total a Receber:</span>
+                            <span class="value" id="total-receber">R$ 0,00</span>
+                        </div>
+                        <div class="info-box">
+                            <span class="label">Total a Pagar:</span>
+                            <span class="value" id="total-pagar">R$ 0,00</span>
+                        </div>
+                    </div>
+                </div>
+                <table class="table" id="table-contas">
+                    <thead>
+                        <tr>
+                            <th>Descrição</th>
+                            <th>Valor</th>
+                            <th>Data</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="loading-row">
+                            <td colspan="4">Carregando...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- PLANEJAMENTO FINANCEIRO TAB -->
+            <section id="planejamento" class="tab-content">
+                <div class="section-header">
+                    <h2>Planejamento Financeiro</h2>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chartPlanejamento"></canvas>
+                </div>
+                <table class="table" id="table-planejamento">
+                    <thead>
+                        <tr>
+                            <th>Período</th>
+                            <th>Previsão Entradas</th>
+                            <th>Previsão Saídas</th>
+                            <th>Previsão Saldo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="loading-row">
+                            <td colspan="4">Carregando...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- ANÁLISE FINANCEIRA TAB -->
+            <section id="analise" class="tab-content">
+                <div class="section-header">
+                    <h2>Análise Financeira</h2>
+                </div>
+                <div class="analise-cards">
+                    <div class="card">
+                        <h3>Índice de Saúde Financeira</h3>
+                        <p id="analise-saude" class="valor">--</p>
+                    </div>
+                    <div class="card">
+                        <h3>Tendência</h3>
+                        <p id="analise-tendencia" class="valor">--</p>
+                    </div>
+                    <div class="card">
+                        <h3>Margem Operacional</h3>
+                        <p id="analise-margem" class="valor">--</p>
+                    </div>
+                </div>
+                <table class="table" id="table-analise">
+                    <thead>
+                        <tr>
+                            <th>Métrica</th>
+                            <th>Valor</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="loading-row">
+                            <td colspan="3">Carregando...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- CADASTROS TAB -->
+            <section id="cadastros" class="tab-content">
+                <div class="section-header">
+                    <h2>Cadastros - Contas e Categorias</h2>
+                </div>
+                <table class="table" id="table-cadastros">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Nome</th>
+                            <th>Tipo</th>
+                            <th>Saldo</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="loading-row">
+                            <td colspan="5">Carregando...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>GRUTA GESTÃO © 2024 | Última sincronização: <span id="footer-timestamp">--:--:--</span></p>
+        </footer>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
